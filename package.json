@@ -1,0 +1,15 @@
+{
+  "name": "1panel-fleet",
+  "version": "0.1.0",
+  "description": "批量管理多台 1Panel v2 服务器的 Web 面板",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "test": "node --test \"test/*.test.js\""
+  }
+}

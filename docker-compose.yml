@@ -1,0 +1,30 @@
+services:
+  1panel-fleet:
+    build: .
+    image: 1panel-fleet:0.1.0
+    container_name: 1panel-fleet
+    restart: unless-stopped
+    ports:
+      # 默认只监听本机，建议通过反向代理（HTTPS）对外提供访问
+      - "127.0.0.1:${HOST_PORT:-8080}:8080"
+    environment:
+      ADMIN_USER: ${ADMIN_USER:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      SECRET_KEY: ${SECRET_KEY:-}
+      READ_ONLY: ${READ_ONLY:-false}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+      POLL_INTERVAL: ${POLL_INTERVAL:-60}
+      TZ: Asia/Shanghai
+    volumes:
+      - fleet-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  fleet-data:
