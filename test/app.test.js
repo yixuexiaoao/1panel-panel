@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { loadConfig } from '../server/config.js';
 import { createApp, buildContainerSpec } from '../server/app.js';
-import { sign } from '../server/panel.js';
+import { sign, request, diagnoseAuth, clockSkew, describeNonJson } from '../server/panel.js';
 import { createStore } from '../server/store.js';
 import { createMockPanel } from './mock-panel.js';
 
@@ -54,6 +54,69 @@ test('sign 与官方算法一致：md5("1panel"+key+timestamp)', () => {
   // 期望值由 printf '1panelabc1700000000' | md5sum 独立算出
   assert.equal(sign('abc', '1700000000'), '5e3f595789bd0e3d08669ea5e1f97219');
   assert.notEqual(sign('abc', '1700000000'), sign('abc', '1700000001'));
+});
+
+test('401 诊断：识别中 / 繁 / 英文案与键名，"API" 中的 "IP" 不会误判为白名单', () => {
+  const cases = [
+    ['Invalid API key', /API Key 不正确/],
+    ['API 接口密钥错误', /API Key 不正确/],
+    ['API 金鑰錯誤', /API Key 不正确/],
+    ['ErrApiConfigKeyInvalid', /API Key 不正确/],
+    ['API 接口时间戳错误', /时间戳无效/],
+    ['Invalid API timestamp', /时间戳无效/],
+    ['调用 API 接口 IP 不在白名单', /白名单内/],
+    ['The API request IP is not on the whitelist', /白名单内/],
+    ['API 接口禁止访问', /API Key 不正确，或面板未开启 API 接口/],
+    ['API access disabled', /未开启 API 接口/],
+    ['此接口禁止使用 API 接口调用', /不允许通过 API 调用/],
+    ['API Key 已到期，请在面板的 API Key 管理中调整有效期或更换密钥。', /已过期/],
+  ];
+  for (const [msg, re] of cases) {
+    const out = diagnoseAuth(msg);
+    assert.match(out, re, msg);
+    if (!/白名单/.test(msg) && !/whitelist/.test(msg)) assert.doesNotMatch(out, /白名单内/, msg);
+  }
+  // 未知文案：保留原文并给出排查清单
+  assert.match(diagnoseAuth('ErrNotLogin'), /ErrNotLogin.*请确认面板已开启 API 接口/);
+  // 识别成功时附带面板原文，便于排查
+  assert.match(diagnoseAuth('API 接口禁止访问'), /（面板返回：API 接口禁止访问）$/);
+  // 时间差：超过 60 秒才提示
+  assert.match(diagnoseAuth('API 接口时间戳错误', 300), /本机时间比面板快约 300 秒/);
+  assert.match(diagnoseAuth('API 接口时间戳错误', -90), /慢约 90 秒/);
+  assert.doesNotMatch(diagnoseAuth('API 接口时间戳错误', 30), /约 \d+ 秒/);
+  assert.equal(clockSkew('Thu, 01 Jan 2026 00:00:00 GMT', Date.parse('2026-01-01T00:05:00Z')), 300);
+  assert.equal(clockSkew(undefined), null);
+  assert.match(describeNonJson(401, 'text/html', ''), /安全入口路径/);
+  assert.match(describeNonJson(200, '', '<!DOCTYPE html><html>'), /反向代理/);
+  assert.match(describeNonJson(502, 'text/plain', 'bad gateway'), /非 JSON/);
+});
+
+test('401 诊断：对模拟面板逐项触发鉴权失败', async () => {
+  const mock = createMockPanel({ apiKey: API_KEY });
+  const url = await mock.listen();
+  const fails = async (apiKey) => {
+    try {
+      await request({ url, apiKey }, 'POST', '/core/settings/search', {});
+    } catch (e) {
+      return e.message;
+    }
+    throw new Error('预期失败');
+  };
+  try {
+    assert.match(await fails('wrong'), /API Key 不正确/);
+    mock.state.auth.ipAllowed = false;
+    assert.match(await fails(API_KEY), /出口 IP 不在面板的 API 白名单内/);
+    mock.state.auth.enabled = false;
+    assert.match(await fails(API_KEY), /未开启 API 接口/);
+    Object.assign(mock.state.auth, { enabled: true, ipAllowed: true, clockOffsetSec: -600 });
+    assert.match(await fails(API_KEY), /时间戳无效.*本机时间比面板快约 (59\d|60\d) 秒/);
+    Object.assign(mock.state.auth, { clockOffsetSec: 0, html: true });
+    assert.match(await fails(API_KEY), /返回了网页/);
+    mock.state.auth.html = false;
+    assert.equal((await request({ url, apiKey: API_KEY }, 'POST', '/core/settings/search', {})).systemVersion, 'v2.0.5');
+  } finally {
+    await mock.close();
+  }
 });
 
 test('store 加解密往返，且密文不含明文', () => {

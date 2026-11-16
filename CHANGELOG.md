@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.1.1 - 2026-11-16
+
+### 修复
+- 面板鉴权失败原因识别错误：原先用 `IP`、`Key` 等短词匹配面板返回的文案，而 “API” 本身含 “IP”，在真实面板上会把所有鉴权失败都误报为“IP 不在白名单”。现按上游 `ErrApiConfig*` 键名及中 / 繁 / 英文案识别
+
+### 新增
+- 401 诊断：区分 API Key 不正确、已过期、时间戳无效、IP 不在白名单、未开启 API 接口、接口禁止 API 调用；识别成功时附带面板原文；无法识别时给出排查清单
+- 根据面板响应的 `Date` 头估算两端时间差，超过 60 秒时在提示中写明“本机比面板快 / 慢约 N 秒”
+- 面板返回 HTML 页面时，提示检查地址是否带了安全入口路径、反向代理是否转发 `/api/v2`
+- GitHub Actions 工作流 `.github/workflows/docker.yml`：推送到 main 时先跑测试，再构建 amd64 + arm64 镜像并推送到 Docker Hub（`<DOCKERHUB_USERNAME>/1panel-panel`，标签为版本号和 `latest`），需要仓库 Secrets `DOCKERHUB_USERNAME`、`DOCKERHUB_TOKEN`
+
+### 行为调整
+- 请求面板时固定发送 `Accept-Language: zh`，面板错误信息统一为中文
+- 1Panel v2.5 起支持多 API Key：Key 匹配不到时会回退到旧版单 Key 配置，此时面板返回“API 接口禁止访问”。对应提示改为“API Key 不正确，或面板未开启 API 接口 / 该 Key 已停用”
+- 模拟面板与上游保持一致：鉴权失败返回 HTTP 200 + `code: 401` 及翻译后的文案，检查顺序为 开关 → 时间戳 → 密钥 → IP；可模拟时钟偏差、API 关闭、IP 不在白名单、返回 HTML 页面
+
+### 测试与验证
+- `npm test`：20 项全部通过（新增 401 诊断纯函数用例、对模拟面板逐项触发鉴权失败的用例）
+- 真实面板联调（1Panel v2.5.1，单台）：状态（版本、系统、CPU / 内存 / 磁盘 / 负载、容器数、升级检查）读取正常；容器与 Compose 列表读取正常（该机暂无容器，列表为空）；用无效 Key 验证鉴权失败提示准确。仅做只读操作，未在真实面板上执行升级、容器或 Compose 变更
+- GUI 验证：已在内置浏览器对本地演示实例查看服务器列表，离线原因显示新文案；真实面板服务器在线状态显示正常
+- `/code-review`（low）：无问题
+
+### 未解决 / 风险
+- 时间戳无效、IP 不在白名单、Key 过期三种情况只在模拟面板上验证过，未在真实面板上触发
+- 变更类接口（升级、容器、Compose、拉取镜像）仍未在真实面板上验证
+
+### 开源参考
+- [IsKenKenYa/1Panel-Client](https://github.com/IsKenKenYa/1Panel-Client)，GPL-3.0：借鉴 401 诊断思路（时间偏差、HTML 响应识别、排查清单），未引用源码
+- [1Panel-dev/1Panel](https://github.com/1Panel-dev/1Panel) `dev-v2`，GPL-3.0：依据 `core/app/auth/api_auth.go`、`api_key.go`、`core/i18n/lang/*.yaml` 确认鉴权检查顺序与返回文案，未引用源码
+
 ## 0.1.0 - 2026-11-16（首个版本，尚未在真实 1Panel 上验证，不视为稳定版）
 
 ### 新增

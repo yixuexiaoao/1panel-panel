@@ -1,7 +1,7 @@
 services:
   1panel-fleet:
     build: .
-    image: 1panel-fleet:0.1.0
+    image: 1panel-fleet:0.1.1
     container_name: 1panel-fleet
     restart: unless-stopped
     ports:
