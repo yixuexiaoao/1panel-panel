@@ -1,5 +1,5 @@
 # 测试通过后构建多架构镜像并推送到 Docker Hub。
-# 需要仓库 Secrets：DOCKERHUB_USERNAME、DOCKERHUB_TOKEN（Docker Hub Access Token，需 Read & Write 权限）。
+# 需要 DOCKERHUB_USERNAME（Variables 或 Secrets）与 DOCKERHUB_TOKEN（建议放 Secrets；Docker Hub Access Token，需 Read & Write 权限）。
 # 镜像：<DOCKERHUB_USERNAME>/1panel-panel，标签为 package.json 的 version 与 latest。
 name: docker
 
@@ -28,8 +28,21 @@ jobs:
   image:
     needs: test
     runs-on: ubuntu-latest
+    env:
+      # 用户名放在 Variables 或 Secrets 均可；token 优先取 Secrets
+      DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN || vars.DOCKERHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: 检查 Docker Hub 配置
+        env:
+          TOKEN_IN_SECRETS: ${{ secrets.DOCKERHUB_TOKEN != '' }}
+        run: |
+          [ -n "$DOCKERHUB_USERNAME" ] || { echo "::error::缺少 DOCKERHUB_USERNAME（Variables 或 Secrets）"; exit 1; }
+          [ -n "$DOCKERHUB_TOKEN" ] || { echo "::error::缺少 DOCKERHUB_TOKEN（应放在 Secrets）"; exit 1; }
+          echo "::add-mask::$DOCKERHUB_TOKEN"
+          [ "$TOKEN_IN_SECRETS" = "true" ] || echo "::warning::DOCKERHUB_TOKEN 放在 Variables 中是明文，任何有仓库读权限的人都能看到，请移到 Secrets"
 
       - name: 读取版本号
         id: meta
@@ -40,8 +53,8 @@ jobs:
 
       - uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          username: ${{ env.DOCKERHUB_USERNAME }}
+          password: ${{ env.DOCKERHUB_TOKEN }}
 
       - uses: docker/build-push-action@v6
         with:
@@ -49,7 +62,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/1panel-panel:${{ steps.meta.outputs.version }}
-            ${{ secrets.DOCKERHUB_USERNAME }}/1panel-panel:latest
+            ${{ env.DOCKERHUB_USERNAME }}/1panel-panel:${{ steps.meta.outputs.version }}
+            ${{ env.DOCKERHUB_USERNAME }}/1panel-panel:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max

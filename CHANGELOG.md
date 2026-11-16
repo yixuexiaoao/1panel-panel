@@ -9,7 +9,7 @@
 - 401 诊断：区分 API Key 不正确、已过期、时间戳无效、IP 不在白名单、未开启 API 接口、接口禁止 API 调用；识别成功时附带面板原文；无法识别时给出排查清单
 - 根据面板响应的 `Date` 头估算两端时间差，超过 60 秒时在提示中写明“本机比面板快 / 慢约 N 秒”
 - 面板返回 HTML 页面时，提示检查地址是否带了安全入口路径、反向代理是否转发 `/api/v2`
-- GitHub Actions 工作流 `.github/workflows/docker.yml`：推送到 main 时先跑测试，再构建 amd64 + arm64 镜像并推送到 Docker Hub（`<DOCKERHUB_USERNAME>/1panel-panel`，标签为版本号和 `latest`），需要仓库 Secrets `DOCKERHUB_USERNAME`、`DOCKERHUB_TOKEN`
+- GitHub Actions 工作流 `.github/workflows/docker.yml`：推送到 main 时先跑测试，再构建 amd64 + arm64 镜像并推送到 Docker Hub（`<DOCKERHUB_USERNAME>/1panel-panel`，标签为版本号和 `latest`），需要 `DOCKERHUB_USERNAME`（Variables 或 Secrets）与 `DOCKERHUB_TOKEN`（建议放 Secrets，放在 Variables 时运行日志会给出警告）
 
 ### 行为调整
 - 请求面板时固定发送 `Accept-Language: zh`，面板错误信息统一为中文
