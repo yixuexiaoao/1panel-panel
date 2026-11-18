@@ -1,10 +1,13 @@
 // 1Panel Fleet 前端。所有来自面板的数据都经 textContent 渲染，不拼接 HTML。
+import { renderServerFiles, renderServerCronjobs } from './server-tools.js';
+
 const state = {
   me: null,
   servers: [],
   selected: new Set(),
   filter: { q: '', group: '' },
   timer: null,
+  cleanup: null,
 };
 
 // ---------- 基础工具 ----------
@@ -164,6 +167,9 @@ function jobTable(job) {
 // ---------- 登录 ----------
 function renderLogin() {
   clearInterval(state.timer);
+  state.cleanup?.();
+  state.cleanup = null;
+  state.me = null;
   $('#modal-root').replaceChildren();
   const user = h('input', { type: 'text', autocomplete: 'username', value: 'admin', required: true });
   const pass = h('input', { type: 'password', autocomplete: 'current-password', required: true });
@@ -193,14 +199,19 @@ function renderLogin() {
 // ---------- 外壳与路由 ----------
 const VIEWS = [
   ['servers', '服务器', viewServers],
-  ['containers', '容器', viewContainers],
+  ['containers', '跨服务器容器', viewContainers],
   ['jobs', '任务', viewJobs],
   ['audit', '操作日志', viewAudit],
 ];
 
 function renderShell() {
-  const current = location.hash.replace(/^#\/?/, '') || 'servers';
+  const current = location.hash.replace(/^#\/?/, '').split('?')[0] || 'servers';
+  const detail = current.match(/^servers\/([^/]+)(?:\/([^/]+))?$/);
   const view = VIEWS.find((v) => v[0] === current) || VIEWS[0];
+  clearInterval(state.timer);
+  state.cleanup?.();
+  state.cleanup = null;
+  fill($('#modal-root'));
   const main = h('main');
   $('#app').replaceChildren(
     h('div', { class: 'topbar' },
@@ -211,11 +222,79 @@ function renderShell() {
         h('span', null, `v${state.me.version}`),
         h('button', { class: 'btn small', onclick: busy(async () => { await api('POST', '/api/logout'); renderLogin(); }) }, '退出'))),
     main);
-  clearInterval(state.timer);
-  view[2](main);
+  if (detail) {
+    try {
+      viewServer(main, decodeURIComponent(detail[1]), detail[2] || 'overview');
+    } catch {
+      fill(main, h('div', { class: 'empty' }, '服务器地址无效'));
+    }
+  } else view[2](main);
 }
 
 const canWrite = () => !state.me.readOnly;
+const serverHref = (id, tab = 'overview') => `#/servers/${encodeURIComponent(id)}/${tab}`;
+
+// ---------- 单机管理 ----------
+async function viewServer(main, serverId, selectedTab) {
+  fill(main, h('div', { class: 'empty' }, '加载服务器…'));
+  try {
+    await loadServers();
+    if (!main.isConnected) return;
+    const server = state.servers.find((s) => s.id === serverId);
+    if (!server) return fill(main, h('div', { class: 'empty' }, '服务器不存在或已移除。', h('a', { href: '#/servers' }, '返回服务器列表')));
+    const tabs = [['overview', '概览'], ['containers', '容器'], ['composes', 'Compose 编排'], ['files', '文件'], ['cronjobs', '定时任务']];
+    const tab = tabs.some(([id]) => id === selectedTab) ? selectedTab : 'overview';
+    const status = server.status;
+    const content = h('section', { class: 'server-content', 'aria-label': `${server.name} ${tabs.find(([id]) => id === tab)[1]}` });
+    fill(main,
+      h('div', { class: 'server-header' },
+        h('div', null,
+          h('a', { class: 'back-link', href: '#/servers' }, '← 服务器列表'),
+          h('h1', null, server.name, ' ', h('span', { class: `badge ${status.state === 'online' ? 'ok' : status.state === 'offline' ? 'bad' : ''}` }, status.state === 'online' ? '在线' : status.state === 'offline' ? '离线' : '待检查')),
+          h('div', { class: 'muted' }, [server.group, server.url, status.version].filter(Boolean).join(' · '))),
+        h('div', { class: 'toolbar' },
+          h('button', { class: 'btn', onclick: busy(async () => {
+            await api('POST', `/api/servers/${server.id}/refresh`);
+            if (main.isConnected) renderShell();
+          }) }, '刷新状态'),
+          h('a', { class: 'btn', href: server.url, target: '_blank', rel: 'noopener noreferrer' }, '打开原面板 ↗'))),
+      status.error && h('div', { class: 'banner', role: 'status' }, status.error),
+      h('nav', { class: 'server-tabs', 'aria-label': '单机管理' }, tabs.map(([id, label]) =>
+        h('a', { href: serverHref(server.id, id), class: id === tab ? 'active' : '', 'aria-current': id === tab ? 'page' : null }, label))),
+      content);
+    if (tab === 'containers' || tab === 'composes') {
+      viewContainers(content, { server, tab });
+    } else if (tab === 'files' || tab === 'cronjobs') {
+      const ctx = { server, h, fill, api, toast, busy, modal, confirmDialog, field, block, check, fmtBytes, fmtTime, canWrite };
+      state.cleanup = (tab === 'files' ? renderServerFiles : renderServerCronjobs)(content, ctx);
+    } else renderServerOverview(content, server);
+  } catch (e) {
+    if (main.isConnected) fill(main, h('div', { class: 'empty' }, e.message));
+  }
+}
+
+function renderServerOverview(main, server) {
+  const status = server.status;
+  const stat = (label, value) => h('div', { class: 'stat' }, h('div', { class: 'label' }, label), h('div', { class: 'value' }, value));
+  const load = status.load?.map((n) => n == null ? '-' : Number(n).toFixed(2)).join(' / ') || '-';
+  const detail = (label, value) => h('div', { class: 'server-fact' }, h('dt', null, label), h('dd', null, value || '-'));
+  main.append(
+    h('div', { class: 'stats' },
+      stat('CPU', status.cpu == null ? '-' : `${status.cpu.toFixed(0)}%`),
+      stat('内存', status.mem?.percent == null ? '-' : `${status.mem.percent.toFixed(0)}%`),
+      stat('运行时间', fmtUptime(status.uptime)),
+      stat('容器', status.containers ? `${status.containers.running} / ${status.containers.total}` : '-')),
+    h('div', { class: 'server-overview-grid' },
+      h('section', { class: 'card server-info' }, h('h2', null, '系统信息'),
+        h('dl', null, detail('主机名', status.hostname), detail('操作系统', status.os), detail('架构 / 内核', [status.arch, status.kernel].filter(Boolean).join(' / ')),
+          detail('CPU 核心', status.cpuCores), detail('内存使用', status.mem ? `${fmtBytes(status.mem.used)} / ${fmtBytes(status.mem.total)}` : ''),
+          detail('负载 1 / 5 / 15 分钟', load), detail('最后检查', fmtTime(status.checkedAt)), detail('备注', server.note))),
+      h('section', { class: 'card server-info' }, h('h2', null, '磁盘使用'),
+        status.disks?.length ? status.disks.map((disk) => h('div', { class: 'server-disk' }, h('div', { class: 'toolbar' }, h('strong', null, disk.path), h('span', { class: 'spacer' }), `${fmtBytes(disk.used)} / ${fmtBytes(disk.total)}`), meter(disk.percent))) : h('p', { class: 'muted' }, '暂无磁盘信息'))),
+    h('div', { class: 'server-shortcuts' },
+      [['containers', '管理容器', '查看运行状态、启动和停止容器'], ['composes', '管理编排', '部署和维护 Compose 项目'], ['files', '管理文件', '浏览目录、查看和编辑文件'], ['cronjobs', '管理定时任务', '查看执行记录、日志和调度状态']].map(([tab, title, description]) =>
+        h('a', { class: 'card server-shortcut', href: serverHref(server.id, tab) }, h('strong', null, title), h('span', { class: 'muted' }, description)))));
+}
 
 // ---------- 服务器 ----------
 async function loadServers() {
@@ -301,7 +380,7 @@ function viewServers(main) {
     return h('tr', null,
       h('td', null, box),
       h('td', { class: 'name-cell' },
-        h('div', null, h('a', { href: s.url, target: '_blank', rel: 'noopener noreferrer', title: '打开面板' }, s.name)),
+        h('div', null, h('a', { href: serverHref(s.id), title: '进入服务器管理' }, s.name)),
         h('div', { class: 'sub' }, [st.hostname, s.note].filter(Boolean).join(' · ') || s.url)),
       h('td', null, on
         ? h('span', { class: 'badge ok', title: `运行 ${fmtUptime(st.uptime)}\n检查于 ${fmtTime(st.checkedAt)}` }, '在线')
@@ -315,9 +394,10 @@ function viewServers(main) {
       h('td', null, on && disk ? meter(disk.percent, diskTitle) : '-'),
       h('td', { class: 'num' }, on && st.load?.[0] != null ? st.load.map((n) => Number(n).toFixed(2)).join(' ') : '-'),
       h('td', { class: 'num' }, on && st.containers
-        ? h('a', { href: '#/containers', onclick: () => sessionStorage.setItem('opf.server', s.id) }, `${st.containers.running} / ${st.containers.total}`)
+        ? h('a', { href: serverHref(s.id, 'containers') }, `${st.containers.running} / ${st.containers.total}`)
         : '-'),
       h('td', { class: 'actions' },
+        h('a', { class: 'btn link', href: serverHref(s.id) }, '管理'),
         h('button', { class: 'btn link', onclick: busy(async () => { const r = await api('POST', `/api/servers/${s.id}/refresh`); Object.assign(s, r); draw(); }) }, '刷新'),
         canWrite() && h('button', { class: 'btn link', onclick: () => serverDialog(s) }, '编辑'),
         canWrite() && h('button', { class: 'btn link danger', onclick: busy(() => removeServer(s)) }, '删除')));
@@ -390,21 +470,23 @@ function viewServers(main) {
 // ---------- 容器 ----------
 const STATE_BADGE = { running: 'ok', exited: 'bad', dead: 'bad', paused: 'warn', restarting: 'warn', created: '' };
 
-function viewContainers(main) {
-  let tab = 'containers';
+function viewContainers(main, { server, tab: initialTab = 'containers' } = {}) {
+  let tab = initialTab;
   let groups = [];
+  let requestVersion = 0;
   const picked = new Map(); // `${serverId}\n${name}` -> { serverId, name }
-  const preset = sessionStorage.getItem('opf.server') || 'all';
-  sessionStorage.removeItem('opf.server');
+  const preset = server?.id || 'all';
 
-  const serverSel = h('select', { 'aria-label': '服务器', onchange: () => reload() });
-  const stateSel = h('select', { 'aria-label': '状态', onchange: () => reload() },
+  const serverSel = h('select', { 'aria-label': '服务器', hidden: !!server, onchange: () => reload() });
+  const stateSel = h('select', { 'aria-label': '状态', hidden: tab !== 'containers', onchange: () => reload() },
     [['all', '全部状态'], ['running', '运行中'], ['exited', '已停止'], ['paused', '已暂停'], ['restarting', '重启中'], ['created', '已创建']]
       .map(([v, l]) => h('option', { value: v }, l)));
   const search = h('input', { type: 'search', placeholder: '按名称搜索', onkeydown: (e) => e.key === 'Enter' && reload() });
-  const tabsEl = h('div', { class: 'tabs' });
+  const tabsEl = h('div', { class: 'tabs', hidden: !!server });
   const batchEl = h('span');
   const listEl = h('div', { class: 'card' });
+  const deployButton = h('button', { class: 'btn primary', hidden: tab !== 'composes', onclick: () => composeDialog() }, '部署 Compose');
+  const createButton = h('button', { class: 'btn primary', hidden: tab !== 'containers', onclick: () => createDialog() }, '创建容器');
 
   main.append(
     tabsEl,
@@ -412,25 +494,31 @@ function viewContainers(main) {
       serverSel, stateSel, search, h('button', { class: 'btn', onclick: () => reload() }, '查询'), batchEl,
       h('span', { class: 'spacer' }),
       canWrite() && h('button', { class: 'btn', onclick: () => pullDialog() }, '拉取镜像'),
-      canWrite() && h('button', { class: 'btn', onclick: () => composeDialog() }, '部署 Compose'),
-      canWrite() && h('button', { class: 'btn primary', onclick: () => createDialog() }, '创建容器')),
+      canWrite() && deployButton,
+      canWrite() && createButton),
     listEl);
 
   function drawTabs() {
+    deployButton.hidden = tab !== 'composes';
+    createButton.hidden = tab !== 'containers';
     fill(tabsEl, [['containers', '容器'], ['composes', 'Compose 编排']].map(([id, label]) =>
       h('button', { class: id === tab ? 'active' : '', onclick: () => { tab = id; stateSel.hidden = id !== 'containers'; picked.clear(); drawTabs(); reload(); } }, label)));
   }
 
   async function reload() {
+    const version = ++requestVersion;
+    picked.clear();
+    fill(batchEl);
     fill(listEl, h('div', { class: 'empty' }, '加载中…'));
     try {
-      const q = new URLSearchParams({ server: serverSel.value || 'all', name: search.value.trim() });
+      const q = new URLSearchParams({ server: server?.id || serverSel.value || 'all', name: search.value.trim() });
       if (tab === 'containers') q.set('state', stateSel.value);
-      groups = await api('GET', `/api/${tab}?${q}`);
-      picked.clear();
+      const result = await api('GET', `/api/${tab}?${q}`);
+      if (!main.isConnected || version !== requestVersion) return;
+      groups = result;
       draw();
     } catch (e) {
-      fill(listEl, h('div', { class: 'empty' }, e.message));
+      if (main.isConnected && version === requestVersion) fill(listEl, h('div', { class: 'empty' }, e.message));
     }
   }
 
@@ -481,7 +569,7 @@ function viewContainers(main) {
     const running = c.state === 'running';
     return h('tr', null,
       h('td', null, canWrite() && box),
-      h('td', null, g.serverName),
+      h('td', null, server ? g.serverName : h('a', { href: serverHref(g.serverId, 'containers') }, g.serverName)),
       h('td', null, c.name),
       h('td', { class: 'wrap mono', title: c.imageName }, c.imageName),
       h('td', null, h('span', { class: `badge ${STATE_BADGE[c.state] ?? ''}` }, c.state)),
@@ -510,7 +598,7 @@ function viewContainers(main) {
       }),
     }, label);
     return h('tr', null,
-      h('td', null, g.serverName),
+      h('td', null, server ? g.serverName : h('a', { href: serverHref(g.serverId, 'composes') }, g.serverName)),
       h('td', null, c.name, ' ', c.createdBy === 'Apps' && h('span', { class: 'badge' }, '应用商店')),
       h('td', { class: 'num' }, `${c.runningCount ?? 0} / ${c.containerCount ?? 0}`),
       h('td', { class: 'wrap mono', title: c.path }, c.path || '-'),
@@ -518,7 +606,10 @@ function viewContainers(main) {
       h('td', { class: 'actions' }, canWrite() && [op('up', '启动'), op('restart', '重启'), op('stop', '停止'), op('down', 'Down', true)]));
   }
 
-  const defaultTargets = () => (serverSel.value && serverSel.value !== 'all' ? [serverSel.value] : []);
+  const defaultTargets = () => (server?.id ? [server.id] : serverSel.value && serverSel.value !== 'all' ? [serverSel.value] : []);
+  const targetPicker = () => server
+    ? { el: h('div', { class: 'muted' }, server.name), value: () => [server.id] }
+    : serverPicker(defaultTargets());
 
   function upgradeContainerDialog(g, c) {
     const image = h('input', { type: 'text', value: c.imageName || '' });
@@ -537,7 +628,7 @@ function viewContainers(main) {
   }
 
   function createDialog() {
-    const picker = serverPicker(defaultTargets());
+    const picker = targetPicker();
     const f = {
       name: h('input', { type: 'text', placeholder: 'my-app' }),
       image: h('input', { type: 'text', placeholder: 'nginx:1.27' }),
@@ -567,7 +658,7 @@ function viewContainers(main) {
   }
 
   function composeDialog() {
-    const picker = serverPicker(defaultTargets());
+    const picker = targetPicker();
     const name = h('input', { type: 'text', placeholder: 'my-stack' });
     const file = h('textarea', { rows: 12, placeholder: 'services:\n  web:\n    image: nginx:1.27\n    ports:\n      - "8080:80"\n    restart: unless-stopped' });
     const env = h('textarea', { rows: 3, placeholder: 'KEY=VALUE（可选，写入 .env）' });
@@ -591,18 +682,19 @@ function viewContainers(main) {
   }
 
   function pullDialog() {
-    const picker = serverPicker(defaultTargets());
+    const picker = targetPicker();
     const image = h('input', { type: 'text', placeholder: 'redis:7' });
-    modal('批量拉取镜像', h('div', null, block('目标服务器', picker.el), field('镜像', image)),
+    modal(server ? '拉取镜像' : '批量拉取镜像', h('div', null, block('目标服务器', picker.el), field('镜像', image)),
       [{ label: '拉取', onClick: async () => showJob(await api('POST', '/api/images/pull', { serverIds: picker.value(), image: image.value.trim() })) }]);
   }
 
   (async () => {
     try {
-      await loadServers();
+      if (!server) await loadServers();
     } catch (e) {
       return fill(listEl, h('div', { class: 'empty' }, e.message));
     }
+    if (!main.isConnected) return;
     fill(serverSel, h('option', { value: 'all' }, '全部服务器'),
       state.servers.map((s) => h('option', { value: s.id, selected: s.id === preset }, s.name)));
     drawTabs();

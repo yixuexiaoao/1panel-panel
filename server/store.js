@@ -8,7 +8,7 @@ const AUDIT_MAX = 500;
 export function createStore(cfg) {
   fs.mkdirSync(cfg.dataDir, { recursive: true });
   const file = path.join(cfg.dataDir, 'data.json');
-  let data = { servers: [], audit: [], admin: null };
+  let data = { servers: [], audit: [], admin: null, templates: [] };
   if (fs.existsSync(file)) {
     data = { ...data, ...JSON.parse(fs.readFileSync(file, 'utf8')) };
   }
@@ -25,10 +25,11 @@ export function createStore(cfg) {
     return buf;
   }
 
-  function save() {
+  function save(next = data) {
     const tmp = file + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify(data, null, 2), { mode: 0o600 });
+    fs.writeFileSync(tmp, JSON.stringify(next, null, 2), { mode: 0o600 });
     fs.renameSync(tmp, file);
+    data = next;
   }
 
   function encrypt(text) {
@@ -45,6 +46,36 @@ export function createStore(cfg) {
     decipher.setAuthTag(Buffer.from(tag, 'base64'));
     return Buffer.concat([decipher.update(Buffer.from(ct, 'base64')), decipher.final()]).toString('utf8');
   }
+
+  function sealTemplate({ id, createdAt, updatedAt, ...fields }) {
+    const stored = { id, contentEnc: encrypt(JSON.stringify(fields)) };
+    if (createdAt !== undefined) stored.createdAt = createdAt;
+    if (updatedAt !== undefined) stored.updatedAt = updatedAt;
+    return stored;
+  }
+
+  function openTemplate({ contentEnc, ...metadata }) {
+    return { ...JSON.parse(decrypt(contentEnc)), ...metadata };
+  }
+
+  // 接续已有工作区的数据格式，同时移除旧审计里的命令正文。
+  let migrated = false;
+  const templates = data.templates.map((t) => {
+    if (t.contentEnc) return t;
+    migrated = true;
+    return sealTemplate(t);
+  });
+  const audit = data.audit.map((entry) => {
+    if (!/^(执行命令：|执行：)/u.test(entry.action)) return entry;
+    migrated = true;
+    const completed = entry.action.endsWith('（完成）');
+    return {
+      ...entry,
+      action: completed ? '执行命令（完成）' : '执行命令',
+      detail: String(entry.detail ?? '').replace(/；脚本：[\s\S]*$/u, ''),
+    };
+  });
+  if (migrated) save({ ...data, templates, audit });
 
   return {
     encrypt,
@@ -89,5 +120,30 @@ export function createStore(cfg) {
       save();
     },
     listAudit: () => data.audit,
+
+    // ---- 自定义操作模板 ----
+    listTemplates: () => data.templates.map(openTemplate),
+    getTemplate(id) {
+      const t = data.templates.find((t) => t.id === id);
+      return t ? openTemplate(t) : undefined;
+    },
+    addTemplate(fields) {
+      const t = { id: crypto.randomUUID(), createdAt: new Date().toISOString(), ...fields };
+      save({ ...data, templates: [...data.templates, sealTemplate(t)] });
+      return t;
+    },
+    updateTemplate(id, fields) {
+      const index = data.templates.findIndex((x) => x.id === id);
+      if (index === -1) return null;
+      const t = { ...openTemplate(data.templates[index]), ...fields, updatedAt: new Date().toISOString() };
+      save({ ...data, templates: data.templates.with(index, sealTemplate(t)) });
+      return t;
+    },
+    removeTemplate(id) {
+      const remaining = data.templates.filter((t) => t.id !== id);
+      if (remaining.length === data.templates.length) return false;
+      save({ ...data, templates: remaining });
+      return true;
+    },
   };
 }

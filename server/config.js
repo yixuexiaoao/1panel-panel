@@ -23,6 +23,8 @@ export function loadConfig(env = process.env) {
     requestTimeoutMs: num(env.REQUEST_TIMEOUT, 15, 3, 120) * 1000,
     upgradeTimeoutMs: num(env.UPGRADE_TIMEOUT, 900, 60, 3600) * 1000,
     upgradePollMs: 5000,
+    // 批量命令轮询执行记录的间隔
+    commandPollMs: 2000,
     upgradeConcurrency: num(env.UPGRADE_CONCURRENCY, 3, 1, 20),
     concurrency: 6,
   };

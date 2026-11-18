@@ -13,6 +13,7 @@
   }
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { margin: 0; }
 body {
   background: var(--bg); color: var(--text);
@@ -30,7 +31,7 @@ a:hover { text-decoration: underline; }
 .brand { font-weight: 650; font-size: 16px; display: flex; align-items: center; gap: 8px; }
 .brand img { width: 22px; height: 22px; }
 .nav { display: flex; gap: 2px; flex: 1; }
-.nav a { padding: 15px 12px; color: var(--muted); border-bottom: 2px solid transparent; }
+.nav a { padding: 15px 12px; color: var(--muted); border-bottom: 2px solid transparent; white-space: nowrap; }
 .nav a:hover { color: var(--text); text-decoration: none; }
 .nav a.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
 .topbar .right { display: flex; align-items: center; gap: 10px; color: var(--muted); }
@@ -95,6 +96,63 @@ tr.group-row td { background: var(--mute-bg); font-weight: 600; font-size: 13px;
 .tabs button { border: none; background: none; padding: 6px 14px; border-radius: 6px; cursor: pointer; color: var(--muted); }
 .tabs button.active { background: var(--panel); color: var(--accent); font-weight: 600; box-shadow: var(--shadow); }
 
+/* 单机管理 */
+.server-header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 12px; margin-bottom: 16px; }
+.server-header .toolbar { margin: 0; }
+.server-breadcrumb { margin: 0 0 10px; color: var(--muted); }
+.server-header h1 { margin: 0 0 4px; font-size: clamp(22px, 4vw, 30px); line-height: 1.2; overflow-wrap: anywhere; }
+.server-header .muted { overflow-wrap: anywhere; }
+.server-tabs { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--line); margin-bottom: 16px; }
+.server-tabs a { padding: 9px 12px; color: var(--muted); border-bottom: 2px solid transparent; text-decoration: none; }
+.server-tabs a:hover { color: var(--text); background: var(--hover); }
+.server-tabs a.active, .server-tabs a[aria-current] { color: var(--accent); border-color: var(--accent); font-weight: 650; }
+.server-overview-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr)); gap: 12px; }
+.server-file-path { max-width: 100%; overflow-wrap: anywhere; white-space: normal; }
+.server-file-pagination { margin-top: 12px; }
+.server-text-preview { margin: 0; min-height: 6rem; max-height: 22rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 10px; border: 1px solid var(--line); border-radius: 6px; font-family: ui-monospace, Consolas, monospace; }
+.back-link { display: inline-block; margin-bottom: 8px; }
+.server-header h1 .badge { vertical-align: middle; }
+.server-content { min-width: 0; }
+.server-content td { white-space: nowrap; }
+.server-content td .actions { display: flex; gap: 4px; justify-content: flex-end; }
+.server-info { padding: 14px 16px; }
+.server-info h2 { font-size: 16px; margin: 0 0 10px; }
+.server-info dl { margin: 0; }
+.server-fact { display: grid; grid-template-columns: minmax(110px, 1fr) 2fr; align-items: baseline; gap: 8px 14px; padding: 4px 0; }
+.server-fact dt { color: var(--muted); }
+.server-fact dd { margin: 0; overflow-wrap: anywhere; }
+.server-disk .toolbar { margin: 0 0 4px; }
+.server-disk + .server-disk { margin-top: 12px; }
+.server-shortcuts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: 10px; margin-top: 14px; }
+.server-shortcut { display: grid; gap: 2px; align-content: center; padding: 12px 14px; }
+.server-shortcut:hover { background: var(--hover); text-decoration: none; }
+
+/* 文件浏览器 */
+.file-browser { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 16px; align-items: start; }
+.file-browser-main { min-width: 0; }
+.file-favorites { padding: 12px; }
+.file-favorites summary { cursor: pointer; font-weight: 600; }
+.file-favorite-list { display: grid; gap: 4px; margin-top: 12px; }
+.file-favorite { display: flex; align-items: start; gap: 4px; }
+.file-favorite > .btn:first-child { flex: 1; min-width: 0; text-align: left; white-space: normal; overflow-wrap: anywhere; }
+.file-favorite > .active { background: var(--hover); font-weight: 600; }
+.file-favorite-list p { margin: 0; }
+.file-address { flex: 1; min-width: 120px; }
+.file-search { margin: 0; }
+.file-hidden-toggle { display: flex; gap: 5px; align-items: center; white-space: nowrap; }
+.file-browser .server-breadcrumb { display: flex; flex-wrap: wrap; gap: 2px; margin: 0; }
+.file-path-label { overflow-wrap: anywhere; }
+.file-transfers { margin-top: 16px; border: 1px solid var(--line); border-radius: 8px; padding: 12px; background: var(--panel); }
+.file-transfer-list { display: grid; gap: 10px; max-height: 260px; overflow-y: auto; }
+.file-transfer { display: grid; grid-template-columns: minmax(120px, 1fr) 70px minmax(100px, 1fr); gap: 4px 12px; align-items: center; }
+.file-transfer-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-transfer > span:last-child { grid-column: 1 / -1; overflow-wrap: anywhere; }
+.file-transfer progress { width: 100%; accent-color: var(--accent); }
+.file-transfer-success { color: var(--ok); }
+.file-operation-notice:empty { display: none; }
+.file-operation-notice { margin: 8px 0; padding: 8px 12px; background: var(--hover); border-radius: 6px; }
+.file-more-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
+
 /* 登录 */
 .login-wrap { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
 .login { width: 100%; max-width: 340px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 28px; box-shadow: var(--shadow); }
@@ -124,6 +182,11 @@ tr.group-row td { background: var(--mute-bg); font-weight: 600; font-size: 13px;
 @media (max-width: 640px) {
   main { padding: 16px; }
   .topbar { padding: 0 16px; gap: 8px; }
+  .topbar .nav { order: 1; flex: 1 1 100%; min-width: 0; overflow-x: auto; }
+  .topbar .right { margin-left: auto; }
   .nav a { padding: 12px 8px; }
   .grid2 { grid-template-columns: 1fr; }
+  .file-browser { grid-template-columns: 1fr; gap: 12px; }
+  .file-favorite-list { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  .file-transfer { grid-template-columns: minmax(80px, 1fr) 55px minmax(70px, 1fr); }
 }

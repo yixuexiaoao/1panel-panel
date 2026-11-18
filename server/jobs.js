@@ -10,7 +10,7 @@ export function createJobs() {
   /**
    * @param {{type:string,title:string,user:string,concurrency:number}} meta
    * @param {{serverId:string,name:string}[]} targets
-   * @param {(target, report:(message:string)=>void)=>Promise<string|void>} worker 返回值作为成功信息
+   * @param {(target, report:(message:string)=>void)=>Promise<string|{message?:string,output?:string}|void>} worker 返回值作为成功信息
    */
   function run(meta, targets, worker) {
     const job = {
@@ -31,12 +31,16 @@ export function createJobs() {
       item.status = 'running';
       item.startedAt = new Date().toISOString();
       try {
-        const msg = await worker(target, (m) => (item.message = m));
+        const r = await worker(target, (m) => (item.message = m));
         item.status = 'success';
-        if (msg) item.message = msg;
+        // worker 可返回字符串，或 { message, output }（output 为命令输出）
+        const { message, output } = typeof r === 'object' && r ? r : { message: r };
+        if (message) item.message = message;
+        if (output != null) item.output = output;
       } catch (e) {
         item.status = 'failed';
         item.message = e.message || String(e);
+        if (e.output) item.output = e.output;
       }
       item.finishedAt = new Date().toISOString();
     }).then(() => {

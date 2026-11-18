@@ -1,7 +1,7 @@
 services:
   1panel-fleet:
     build: .
-    image: 1panel-fleet:0.1.1
+    image: 1panel-fleet:0.3.0
     container_name: 1panel-fleet
     restart: unless-stopped
     ports:
@@ -15,6 +15,11 @@ services:
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       TRUST_PROXY: ${TRUST_PROXY:-false}
       POLL_INTERVAL: ${POLL_INTERVAL:-60}
+      UPGRADE_CHECK_HOURS: ${UPGRADE_CHECK_HOURS:-6}
+      UPGRADE_TIMEOUT: ${UPGRADE_TIMEOUT:-900}
+      UPGRADE_CONCURRENCY: ${UPGRADE_CONCURRENCY:-3}
+      REQUEST_TIMEOUT: ${REQUEST_TIMEOUT:-15}
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-12}
       TZ: Asia/Shanghai
     volumes:
       - fleet-data:/data

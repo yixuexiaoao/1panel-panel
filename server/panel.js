@@ -190,4 +190,33 @@ export const api = {
     ),
   operateCompose: (s, { name, path, operation }) =>
     request(s, 'POST', '/containers/compose/operate', { name, path, operation, withFile: false, force: false }, LONG),
+
+  // ---- 文件（agent/router/ro_file.go，请求体见 agent/app/dto/request/file.go） ----
+  listFiles: (s, path, { showHidden = true, page = 1, pageSize = 500, search = '' } = {}, o) =>
+    request(s, 'POST', '/files/search', {
+      path, search, containSub: false, expand: true, dir: false, showHidden, page, pageSize, sortBy: 'name', sortOrder: 'ascending', isDetail: false,
+    }, o),
+  fileContent: (s, path, o) => request(s, 'POST', '/files/content', { path, isDetail: false }, o),
+  saveFile: (s, path, content) => request(s, 'POST', '/files/save', { path, content }),
+  createFile: (s, { path, isDir, content = '' }) =>
+    request(s, 'POST', '/files', { path, content, isDir: !!isDir, mode: isDir ? 0o755 : 0o644, isLink: false, isSymlink: false, linkPath: '', sub: false }),
+  deleteFile: (s, path, isDir) => request(s, 'POST', '/files/del', { path, isDir: !!isDir, forceDelete: false }),
+  renameFile: (s, oldName, newName) => request(s, 'POST', '/files/rename', { oldName, newName }),
+
+  // ---- 定时任务（agent/router/ro_cronjob.go，请求体见 agent/app/dto/cronjob.go） ----
+  searchCronjobs: (s, info = '', o) =>
+    request(s, 'POST', '/cronjobs/search', { page: 1, pageSize: 500, info, groupIDs: [], orderBy: 'createdAt', order: 'descending' }, o),
+  // 查询最近 30 天，并向后放宽一天以容忍面板时钟偏差。
+  searchRecords: (s, cronjobID, { page = 1, pageSize = 20, status = '' } = {}, o) =>
+    request(s, 'POST', '/cronjobs/search/records', {
+      page, pageSize, cronjobID, status,
+      startTime: new Date(Date.now() - 30 * 86400_000).toISOString(),
+      endTime: new Date(Date.now() + 86400_000).toISOString(),
+    }, o),
+  recordLog: (s, id, o) => request(s, 'POST', '/cronjobs/records/log', { id }, o),
+  createCronjob: (s, job) => request(s, 'POST', '/cronjobs', job),
+  handleCronjob: (s, id) => request(s, 'POST', '/cronjobs/handle', { id }),
+  stopCronjobRecord: (s, id) => request(s, 'POST', '/cronjobs/stop', { id }),
+  cronjobStatus: (s, id, status) => request(s, 'POST', '/cronjobs/status', { id, status }),
+  deleteCronjobs: (s, ids, cleanData = true) => request(s, 'POST', '/cronjobs/del', { ids, cleanData, cleanRemoteData: false }),
 };

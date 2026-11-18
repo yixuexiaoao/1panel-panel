@@ -1,6 +1,6 @@
 {
   "name": "1panel-fleet",
-  "version": "0.1.1",
+  "version": "0.3.0",
   "description": "批量管理多台 1Panel v2 服务器的 Web 面板",
   "type": "module",
   "private": true,

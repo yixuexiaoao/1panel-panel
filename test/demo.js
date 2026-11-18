@@ -20,8 +20,13 @@ const panels = [
   ['测试机', '测试', createMockPanel({ apiKey: KEY, upgradeDelayMs: 4000 }), 'wrong-key'],
 ];
 for (const [name, group, panel, key] of panels) {
+  panel.state.files = [
+    { path: '/workspace', name: 'workspace', isDir: true, isSymlink: false },
+    { path: '/workspace/readme.txt', name: 'readme.txt', isDir: false, isSymlink: false, content: '1Panel Fleet 本地演示\n' },
+  ];
+  panel.state.cronjobs = [{ id: 1, name: '演示巡检', type: 'shell', spec: '0 3 * * *', status: 'Disable', script: 'echo check' }];
   const url = await panel.listen();
   app.store.addServer({ name, url, group, note: '', keyId: '', skipTls: false, apiKeyEnc: app.store.encrypt(key) });
 }
-const port = await app.listen();
-console.log(`demo ready: http://localhost:${port}`);
+const port = await app.listen(cfg.port, '127.0.0.1');
+console.log(`demo ready: http://127.0.0.1:${port}`);
